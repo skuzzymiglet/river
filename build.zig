@@ -152,7 +152,6 @@ const ScdocStep = struct {
         "doc/river.1.scd",
         "doc/riverctl.1.scd",
         "doc/rivertile.1.scd",
-        "doc/river-layouts.7.scd",
     };
 
     builder: *zbs.Builder,
