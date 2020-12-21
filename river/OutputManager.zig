@@ -87,14 +87,8 @@ fn handleNewOutput(listener: *wl.Listener(*wlr.Output), wlr_output: *wlr.Output)
         util.gpa.destroy(node);
         return;
     };
-    const ptr_node = util.gpa.create(std.TailQueue(*Output).Node) catch {
-        wlr_output.destroy();
-        util.gpa.destroy(node);
-        return;
-    };
-    ptr_node.data = &node.data;
 
-    self.root.all_outputs.append(ptr_node);
+    self.root.all_outputs.append(node);
     self.root.addOutput(&node.data);
 }
 
@@ -274,7 +268,7 @@ fn ouputConfigFromCurrent(self: *Self) !*wlr.OutputConfigurationV1 {
     errdefer config.destroy();
 
     var it = self.root.all_outputs.first;
-    while (it) |node| : (it = node.next) try self.createHead(node.data, config);
+    while (it) |node| : (it = node.next) try self.createHead(&node.data, config);
 
     return config;
 }

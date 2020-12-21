@@ -64,10 +64,10 @@ pub fn opacity(
 
     // Update opacity of all views
     // Unmapped views will be skipped, however their opacity gets updated on map anyway
-    var oit = server.root.outputs.first;
-    while (oit) |onode| : (oit = onode.next) {
-        var vit = ViewStack(View).iter(onode.data.views.first, .forward, {}, opacityUpdateFilter);
-        while (vit.next()) |vnode| {
+    var output_it = server.root.outputLayoutIter(.forward);
+    while (output_it.next()) |output| {
+        var view_it = ViewStack(View).iter(output.views.first, .forward, {}, opacityUpdateFilter);
+        while (view_it.next()) |vnode| {
             if (vnode.current.focus > 0) {
                 vnode.pending.target_opacity = server.config.view_opacity_focused;
             } else {

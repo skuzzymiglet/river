@@ -126,11 +126,11 @@ pub fn setTheme(self: *Self, theme: ?[*:0]const u8, _size: ?u32) !void {
     self.xcursor_manager = try wlr.XcursorManager.create(theme, size);
 
     // For each output, ensure a theme of the proper scale is loaded
-    var it = server.root.outputs.first;
-    while (it) |node| : (it = node.next) {
-        const wlr_output = node.data.wlr_output;
-        self.xcursor_manager.load(wlr_output.scale) catch
-            log.err(.cursor, "failed to load xcursor theme '{}' at scale {}", .{ theme, wlr_output.scale });
+    var it = server.root.output_layout.outputs.iterator(.forward);
+    while (it.next()) |layout_output| {
+        const scale = layout_output.output.scale;
+        self.xcursor_manager.load(scale) catch
+            log.err(.cursor, "failed to load xcursor theme '{}' at scale {}", .{ theme, scale });
     }
 
     // If this cursor belongs to the default seat, set the xcursor environment

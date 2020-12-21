@@ -36,11 +36,9 @@ server: *Server,
 
 output_layout: *wlr.OutputLayout,
 
-/// A list of all outputs
-all_outputs: std.TailQueue(*Output) = .{},
-
-/// A list of all active outputs. See Output.active
-outputs: std.TailQueue(Output) = .{},
+/// All outputs (except for the noop output). To iterate over only outputs
+/// currently part of the output_layout, use Root.outputLayoutIter()
+all_outputs: std.TailQueue(Output) = .{},
 
 /// This output is used internally when no real outputs are available.
 /// It is not advertised to clients.
@@ -70,7 +68,6 @@ pub fn init(self: *Self, server: *Server) !void {
         .server = server,
         .output_layout = output_layout,
         .transaction_timer = try self.server.wl_server.getEventLoop().addTimer(*Self, handleTimeout, self),
-        .noop_output = undefined,
     };
 
     const noop_wlr_output = try server.noop_backend.noopAddOutput();
@@ -90,22 +87,32 @@ pub fn deinit(self: *Self) void {
     self.transaction_timer.remove();
 }
 
-/// Remove the output from self.outputs and evacuate views if it is a member of
-/// the list. The node is not freed
+fn OutputLayoutIter(comptime dir: wl.list.Direction) type {
+    return struct {
+        inner: wl.list.Head(wlr.OutputLayout.Output, "link").Iterator(dir),
+
+        pub fn next(it: *@This()) ?*Output {
+            const layout_output = it.inner.next() orelse return null;
+            return @intToPtr(*Output, layout_output.output.data);
+        }
+    };
+}
+
+/// Iterate over all outputs that are currently part of the wlr.OutputLayout
+pub fn outputLayoutIter(self: Self, comptime dir: wl.list.Direction) OutputLayoutIter(dir) {
+    return .{ .inner = self.output_layout.outputs.iterator(dir) };
+}
+
+/// Remove the output from the wlr.OutpuLayout and evacuate views if it has
+/// not already been removed.
 pub fn removeOutput(self: *Self, output: *Output) void {
-    const node = @fieldParentPtr(std.TailQueue(Output).Node, "data", output);
+    if (self.output_layout.get(output.wlr_output) == null) return;
 
-    // If the node has already been removed, do nothing
-    var output_it = self.outputs.first;
-    while (output_it) |n| : (output_it = n.next) {
-        if (n == node) break;
-    } else return;
-
-    self.outputs.remove(node);
+    self.output_layout.remove(output.wlr_output);
 
     // Use the first output in the list as fallback.
     // If there is no other real output, use the noop output.
-    const fallback_output = if (self.outputs.first) |output_node| &output_node.data else &self.noop_output;
+    const fallback_output = if (self.outputLayoutIter(.forward).next()) |o| o else &self.noop_output;
 
     // Move all views from the destroyed output to the fallback one
     while (output.views.last) |view_node| {
@@ -146,35 +153,28 @@ pub fn removeOutput(self: *Self, output: *Output) void {
 /// Add the output to self.outputs and the output layout if it has not
 /// already been added.
 pub fn addOutput(self: *Self, output: *Output) void {
-    const node = @fieldParentPtr(std.TailQueue(Output).Node, "data", output);
-
     // If we have already added the output, do nothing and return
-    var output_it = self.outputs.first;
-    while (output_it) |n| : (output_it = n.next) if (n == node) return;
+    if (self.output_layout.get(output.wlr_output) != null) return;
 
-    self.outputs.append(node);
-
-    // Add the new output to the layout. The add_auto function arranges outputs
-    // from left-to-right in the order they appear. A more sophisticated
-    // compositor would let the user configure the arrangement of outputs in the
-    // layout. This automatically creates an output global on the wl_display.
-    self.output_layout.addAuto(node.data.wlr_output);
+    // Add the output to the wlr.OutputLayout. This creates the wl.Global
+    // as well automatically.
+    self.output_layout.addAuto(output.wlr_output);
 
     // if we previously had no real outputs, move focus from the noop output
     // to the new one.
-    if (self.outputs.len == 1) {
+    if (self.output_layout.outputs.length() == 1) {
         // TODO: move views from the noop output to the new one and focus(null)
         var it = self.server.input_manager.seats.first;
         while (it) |seat_node| : (it = seat_node.next) {
-            seat_node.data.focusOutput(&self.outputs.first.?.data);
+            seat_node.data.focusOutput(output);
         }
     }
 }
 
 /// Arrange all views on all outputs
 pub fn arrangeAll(self: *Self) void {
-    var it = self.outputs.first;
-    while (it) |node| : (it = node.next) node.data.arrangeViews();
+    var it = self.outputLayoutIter(.forward);
+    while (it.next()) |output| output.arrangeViews();
 }
 
 /// Initiate an atomic change to the layout. This change will not be
@@ -184,10 +184,10 @@ pub fn startTransaction(self: *Self) void {
     // to reset the pending count to 0 and clear serials from the views
     self.pending_configures = 0;
 
-    // Iterate over all views of all outputs
-    var output_it = self.outputs.first;
-    while (output_it) |output_node| : (output_it = output_node.next) {
-        var view_it = output_node.data.views.first;
+    // Iterate over all views of all outputs in the layout
+    var output_it = self.outputLayoutIter(.forward);
+    while (output_it.next()) |output| {
+        var view_it = output.views.first;
         while (view_it) |view_node| : (view_it = view_node.next) {
             const view = &view_node.view;
 
@@ -265,10 +265,8 @@ fn commitTransaction(self: *Self) void {
     std.debug.assert(self.pending_configures == 0);
 
     // Iterate over all views of all outputs
-    var output_it = self.outputs.first;
-    while (output_it) |output_node| : (output_it = output_node.next) {
-        const output = &output_node.data;
-
+    var output_it = self.outputLayoutIter(.forward);
+    while (output_it.next()) |output| {
         // Apply pending state of the output
         const output_tags_changed = output.pending.tags != output.current.tags;
         output.current = output.pending;

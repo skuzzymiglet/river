@@ -150,10 +150,8 @@ fn handleInhibitDeactivate(
 
     // Calling arrangeLayers() like this ensures that any top or overlay,
     // keyboard-interactive surfaces will re-grab focus.
-    var output_it = self.server.root.outputs.first;
-    while (output_it) |output_node| : (output_it = output_node.next) {
-        output_node.data.arrangeLayers();
-    }
+    var output_it = self.server.root.outputLayoutIter(.forward);
+    while (output_it.next()) |output| output.arrangeLayers();
 
     // After ensuring that any possible layer surface focus grab has occured,
     // have each Seat handle focus and enter their previous mode.

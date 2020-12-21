@@ -16,6 +16,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 const std = @import("std");
+const wl = @import("wayland").server.wl;
 
 const Direction = @import("../command.zig").Direction;
 const Error = @import("../command.zig").Error;
@@ -39,18 +40,28 @@ pub fn sendToOutput(
     if (seat.focused == .view) {
         // If the noop output is focused, there is nowhere to send the view
         if (seat.focused_output == &root.noop_output) {
-            std.debug.assert(root.outputs.len == 0);
+            std.debug.assert(root.output_layout.outputs.length() == 0);
             return;
         }
 
-        // Send to the next/prev output in the list if there is one, else wrap
-        const current_node = @fieldParentPtr(std.TailQueue(Output).Node, "data", seat.focused_output);
+        // Move the view to the next/prev output in the list if there is one, else wrap
         const destination_output = switch (direction) {
-            .next => if (current_node.next) |node| &node.data else &root.outputs.first.?.data,
-            .previous => if (current_node.prev) |node| &node.data else &root.outputs.last.?.data,
+            .next => blk: {
+                var it = root.outputLayoutIter(.forward);
+                while (it.next()) |output| {
+                    if (output == seat.focused_output)
+                        break :blk it.next() orelse root.outputLayoutIter(.forward).next().?;
+                } else unreachable;
+            },
+            .previous => blk: {
+                var it = root.outputLayoutIter(.reverse);
+                while (it.next()) |output| {
+                    if (output == seat.focused_output)
+                        break :blk it.next() orelse root.outputLayoutIter(.reverse).next().?;
+                } else unreachable;
+            },
         };
 
-        // Move the view to the target output
         seat.focused.view.sendToOutput(destination_output);
 
         // Handle the change and focus whatever's next in the focus stack

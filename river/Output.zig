@@ -494,14 +494,6 @@ fn handleDestroy(listener: *wl.Listener(*wlr.Output), wlr_output: *wlr.Output) v
     // Remove the destroyed output from root if it wasn't already removed
     root.removeOutput(self);
 
-    var it = root.all_outputs.first;
-    while (it) |all_node| : (it = all_node.next) {
-        if (all_node.data == self) {
-            root.all_outputs.remove(all_node);
-            break;
-        }
-    }
-
     // Remove all listeners
     self.destroy.link.remove();
     self.enable.link.remove();
@@ -513,6 +505,7 @@ fn handleDestroy(listener: *wl.Listener(*wlr.Output), wlr_output: *wlr.Output) v
     util.gpa.free(self.layout);
 
     const node = @fieldParentPtr(std.TailQueue(Self).Node, "data", self);
+    root.all_outputs.remove(node);
     util.gpa.destroy(node);
 }
 
