@@ -50,6 +50,8 @@ update: wl.Signal(*Self) = undefined,
 
 handles: wl.list.Head(zriver.OptionHandleV1, null) = undefined,
 
+// TODO list of layout depending on this?
+
 pub fn create(options_manager: *OptionsManager, output: ?*Output, key: [*:0]const u8) !*Self {
     const self = try util.gpa.create(Self);
     errdefer util.gpa.destroy(self);
