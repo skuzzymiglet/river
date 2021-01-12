@@ -38,28 +38,10 @@ over the Wayland protocol.
 *focus-view* *next*|*previous*
 	Focus the next or previous view in the stack.
 
-*layout* *full*|_command_
-	Provide a command which river will use for generating the layout
-	of non-floating windows on the currently focused output. See
-	*river-layouts*(7) for details on the expected formatting of the
-	output of layout commands. Alternatively, “full” can be given
-	instead of a command to cause river to use its single internal layout,
-	in which windows span the entire width and height of the output.
-
-*mod-main-count* _integer_
-	Increase or decrease the number of "main" views which is relayed to the
-	layout generator. _integer_ can be positive or negative. Exactly how
-	"main" views are display, or if they are even displayed differently
-	from other views, is left to the layout generator.
-
-*mod-main-factor* _float_
-	Increase or decrease the "main factor" relayed to layout
-	generators. _float_ is a positive or negative floating point number
-	(such as 0.05). This value is added to the current main factor which
-	is then clamped to the range [0.0, 1.0]. The layout generator is
-	free to interpret this value as it sees fit, or ignore it entirely.
-	*rivertile*(1) uses this to determine what percentage of the screen
-	the "main" area will occupy.
+*layout* _namespace_
+	Set the namespace of the layout river should use for this output. If no
+	layout with this namespace exists for this output, views will simply retain
+	their current dimensions.
 
 *move* *up*|*down*|*left*|*right* _delta_
 	Move the focused view in the specified direction by _delta_ logical
@@ -264,15 +246,9 @@ A complete list may be found in _/usr/include/linux/input-event-codes.h_
 	Setting _step-size_ to 1.0 disables transitions fully regardless of
 	the value of _delta-t_.
 
-*outer-padding* _pixels_
-	Set the padding around the edge of the screen to _pixels_.
-
 *set-repeat* _rate_ _delay_
 	Set the keyboard repeat rate to _rate_ key repeats per second and
 	repeat delay to _delay_ milliseconds.
-
-*view-padding* _pixels_
-	Set the padding around the edge of each view to _pixels_.
 
 *xcursor-theme* _theme_name_ [_size_]
 	Set the xcursor theme to _theme_name_ and optionally set the _size_.

@@ -433,8 +433,9 @@ pub fn enterMode(self: *Self, mode: @TagType(Mode), view: *View) void {
                 },
             };
 
-            // Automatically float all views being moved by the pointer
-            if (!view.current.float) {
+            // Automatically float all views being moved by the pointer,
+            // if their dimensions are set by a layout client.
+            if (!view.current.float and view.output.current.layout) {
                 view.pending.float = true;
                 view.float_box = view.current.box;
                 view.applyPending();

@@ -30,9 +30,11 @@ pub fn layout(
 ) Error!void {
     if (args.len < 2) return Error.NotEnoughArguments;
 
-    util.gpa.free(seat.focused_output.layout);
-    seat.focused_output.layout = try std.mem.join(util.gpa, " ", args[1..]);
+    if (seat.focused_output.layout_namespace) |namespace| util.gpa.free(namespace);
+    seat.focused_output.layout_namespace = try std.mem.join(util.gpa, " ", args[1..]);
 
     seat.focused_output.arrangeViews();
-    seat.input_manager.server.root.startTransaction();
+
+    // Start a transaction in case no layout has been found
+    seat.focused_output.root.startTransaction();
 }

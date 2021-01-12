@@ -180,6 +180,10 @@ fn handleMap(listener: *wl.Listener(*wlr.XdgSurface), xdg_surface: *wlr.XdgSurfa
     view.float_box.y = std.math.max(0, @divTrunc(@intCast(i32, view.output.usable_box.height) -
         @intCast(i32, view.float_box.height), 2));
 
+    // Also use the view's  "natural" size as the initial regular dimensions,
+    // for the case that it does not get arranged by a lyaout.
+    view.pending.box = view.float_box;
+
     const state = &toplevel.current;
     const has_fixed_size = state.min_width != 0 and state.min_height != 0 and
         (state.min_width == state.max_width or state.min_height == state.max_height);
