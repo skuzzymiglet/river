@@ -94,12 +94,11 @@ enable: wl.Listener(*wlr.Output) = wl.Listener(*wlr.Output).init(handleEnable),
 frame: wl.Listener(*wlr.Output) = wl.Listener(*wlr.Output).init(handleFrame),
 mode: wl.Listener(*wlr.Output) = wl.Listener(*wlr.Output).init(handleMode),
 
+layout_option: *Option,
+
 /// Listeners for options
 output_title: wl.Listener(*Option) = wl.Listener(*Option).init(handleTitleChange),
 layout_change: wl.Listener(*Option) = wl.Listener(*Option).init(handleLayoutChange),
-
-/// Option containing the layout namespace.
-layout_namespace_option: *Option = undefined,
 
 pub fn init(self: *Self, root: *Root, wlr_output: *wlr.Output) !void {
     // Some backends don't have modes. DRM+KMS does, and we need to set a mode
@@ -117,6 +116,7 @@ pub fn init(self: *Self, root: *Root, wlr_output: *wlr.Output) !void {
         .root = root,
         .wlr_output = wlr_output,
         .usable_box = undefined,
+        .layout_option = try self.defaultOption("layout", .{ .string = null }, &self.layout_change),
     };
     wlr_output.data = @ptrToInt(self);
 
@@ -159,7 +159,6 @@ pub fn init(self: *Self, root: *Root, wlr_output: *wlr.Output) !void {
 
     // Add some default options to this output
     _ = try self.defaultOption("output_title", .{ .string = default_title.ptr }, &self.output_title);
-    self.layout_namespace_option = try self.defaultOption("layout", .{ .string = null }, &self.layout_change);
     _ = try self.defaultOption("main_amount", .{ .uint = 1 }, null);
     _ = try self.defaultOption("main_factor", .{ .fixed = wl.Fixed.fromDouble(0.6) }, null);
     _ = try self.defaultOption("view_padding", .{ .uint = 10 }, null);
@@ -190,12 +189,12 @@ pub fn arrangeFilter(view: *View, filter_tags: u32) bool {
 /// floating WM.
 ///
 /// The changes of view dimensions are async. Therefore all transactions on this
-/// output are blocked untilt the layout demand has either finished or was
+/// output are blocked until the layout demand has either finished or was
 /// aborted. Both cases will start a transaction.
 pub fn arrangeViews(self: *Self) void {
     if (self == &self.root.noop_output) return;
 
-    // If we already have an active layout demand, abort it.
+    // If there is already an active layout demand, discard it.
     if (self.layout_demand) |demand| {
         demand.deinit();
         self.layout_demand = null;
@@ -529,15 +528,12 @@ fn handleLayoutChange(listener: *wl.Listener(*Option), option: *Option) void {
     // The user changed the layout namespace of this output. Try to find a
     // matching layout.
     const output = option.output.?;
-    output.pending.layout = if (option.value.string) |nmspc| blk: {
+    output.pending.layout = if (option.value.string) |namespace| blk: {
         var layout_it = output.layouts.first;
-        while (layout_it) |node| : (layout_it = node.next) {
-            if (node.data.namespace == null) continue;
-            if (std.mem.eql(u8, std.mem.span(option.value.string.?), node.data.namespace.?))
-                break :blk &node.data;
-        }
-        break :blk null;
+        break :blk while (layout_it) |node| : (layout_it = node.next) {
+            if (mem.eql(u8, mem.span(namespace), node.data.namespace)) break &node.data;
+        } else null;
     } else null;
-    option.output.?.arrangeViews();
-    option.output.?.root.startTransaction();
+    output.arrangeViews();
+    output.root.startTransaction();
 }

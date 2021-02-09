@@ -18,6 +18,7 @@
 const Self = @This();
 
 const std = @import("std");
+const mem = std.mem;
 const wlr = @import("wlroots");
 const wayland = @import("wayland");
 const wl = wayland.server.wl;
@@ -35,44 +36,65 @@ const LayoutDemand = @import("LayoutDemand.zig");
 const log = std.log.scoped(.layout);
 
 layout: *zriver.LayoutV1,
-namespace: ?[]const u8,
+namespace: []const u8,
 output: *Output,
 
-pub fn init(self: *Self, namespace: [*:0]const u8, output: *Output, client: *wl.Client, version: u32, id: u32) !void {
-    self.output = output;
+pub fn create(client: *wl.Client, version: u32, id: u32, output: *Output, namespace: []const u8) !void {
+    const layout = try zriver.LayoutV1.create(client, version, id);
 
-    self.layout = try zriver.LayoutV1.create(client, version, id);
-    self.layout.setHandler(*Self, handleRequest, handleDestroy, self);
+    if (namespaceInUse(namespace, output, client)) {
+        layout.sendNamespaceInUse();
+        layout.setHandler(?*c_void, handleRequestInert, null, null);
+        return;
+    }
 
+    const node = try util.gpa.create(std.TailQueue(Self).Node);
+    errdefer util.gpa.destroy(node);
+    node.data = .{
+        .layout = layout,
+        .namespace = try util.gpa.dupe(u8, namespace),
+        .output = output,
+    };
+    output.layouts.append(node);
+
+    layout.setHandler(*Self, handleRequest, handleDestroy, &node.data);
+
+    // If the namespace matches that of the output, set the layout as
+    // the active one of the output and arrange it.
+    if (output.layout_option.value.string) |current_layout| {
+        if (mem.eql(u8, namespace, mem.span(current_layout))) {
+            output.pending.layout = &node.data;
+            output.arrangeViews();
+        }
+    }
+}
+
+/// Returns true if the given namespace is already in use on the given output
+/// or on another output by a different client.
+fn namespaceInUse(namespace: []const u8, output: *Output, client: *wl.Client) bool {
     var output_it = output.root.outputs.first;
     while (output_it) |output_node| : (output_it = output_node.next) {
         var layout_it = output_node.data.layouts.first;
         if (output_node.data.wlr_output == output.wlr_output) {
-
             // On this output, no other layout can have our namespace.
             while (layout_it) |layout_node| : (layout_it = layout_node.next) {
-                if (std.mem.eql(u8, std.mem.span(namespace), layout_node.data.namespace.?)) {
-                    self.layout.sendNamespaceInUse();
-                    self.namespace = null;
-                    return;
-                }
+                if (mem.eql(u8, namespace, layout_node.data.namespace)) return true;
             }
         } else {
-
             // Layouts on other outputs may share the namespace, if they come from the same client.
             while (layout_it) |layout_node| : (layout_it = layout_node.next) {
-                if (std.mem.eql(u8, std.mem.span(namespace), layout_node.data.namespace.?) and
-                    layout_node.data.layout.getClient() != self.layout.getClient())
-                {
-                    self.layout.sendNamespaceInUse();
-                    self.namespace = null;
-                    return;
-                }
+                if (mem.eql(u8, namespace, layout_node.data.namespace) and
+                    client != layout_node.data.layout.getClient()) return true;
             }
         }
     }
+    return false;
+}
 
-    self.namespace = try util.gpa.dupe(u8, std.mem.span(namespace));
+/// This exists to handle layouts that have been rendered inert (due to the
+/// namespace already being in use) until the client destroys them.
+fn handleRequestInert(layout: *zriver.LayoutV1, request: zriver.LayoutV1.Request, _: ?*c_void) void {
+    if (request == .destroy) layout.destroy();
 }
 
 /// Send a layout demand to the client
@@ -82,25 +104,22 @@ pub fn startLayoutDemand(self: *Self, views: u32) void {
         .{ self.namespace, self.output.wlr_output.name },
     );
 
-    self.output.layout_demand = LayoutDemand.new(self, views) catch {
+    std.debug.assert(self.output.layout_demand == null);
+    self.output.layout_demand = LayoutDemand.init(self, views) catch {
         log.err("failed starting layout demand", .{});
         return;
     };
+    const serial = self.output.layout_demand.?.serial;
 
     // Then we let the client know that we require a layout
-    self.layout.sendLayoutDemand(
-        views,
-        self.output.usable_box.width,
-        self.output.usable_box.height,
-        self.output.layout_demand.?.serial,
-    );
+    self.layout.sendLayoutDemand(views, self.output.usable_box.width, self.output.usable_box.height, serial);
 
     // And finally we advertise all visible views
     var it = ViewStack(View).iter(self.output.views.first, .forward, self.output.pending.tags, Output.arrangeFilter);
     while (it.next()) |view| {
-        self.layout.sendAdvertiseView(view.pending.tags, view.getAppId(), self.output.layout_demand.?.serial);
+        self.layout.sendAdvertiseView(view.pending.tags, view.getAppId(), serial);
     }
-    self.layout.sendAdvertiseDone(self.output.layout_demand.?.serial);
+    self.layout.sendAdvertiseDone(serial);
 }
 
 fn handleRequest(layout: *zriver.LayoutV1, request: zriver.LayoutV1.Request, self: *Self) void {
@@ -119,19 +138,13 @@ fn handleRequest(layout: *zriver.LayoutV1, request: zriver.LayoutV1.Request, sel
                 .{ self.namespace, self.output.wlr_output.name, req.x, req.y, req.width, req.height },
             );
 
-            // Are we a valid layout?
-            if (self.namespace == null) return;
-
-            // Does the serial match?
-            // We can't raise a protocol error when the serial is wrong, because we
-            // destroy the LayoutDemand after a timeout or a new layout demand request
-            // is raised, so that the client then has no idea that its previously
-            // perfectly fine serial is now invalid. So we just ignore requests with
-            // wrong serials.
-            if (self.output.layout_demand == null) return;
-            if (self.output.layout_demand.?.serial != req.serial) return;
-
-            self.output.layout_demand.?.pushViewDimensions(req.x, req.y, req.width, req.height) catch {};
+            if (self.output.layout_demand) |*layout_demand| {
+                // We can't raise a protocol error when the serial is old/wrong
+                // because we do not keep track of old serials server-side.
+                // Therefore, simply ignore requests with old/wrong serials.
+                if (layout_demand.serial != req.serial) return;
+                layout_demand.pushViewDimensions(self.output, req.x, req.y, req.width, req.height);
+            }
         },
 
         // We receive this event when the client wants to mark the proposed layout
@@ -142,19 +155,18 @@ fn handleRequest(layout: *zriver.LayoutV1, request: zriver.LayoutV1.Request, sel
                 .{ self.namespace, self.output.wlr_output.name },
             );
 
-            // Are we a valid layout?
-            if (self.namespace == null) return;
-
-            // Does the serial match?
-            if (self.output.layout_demand == null) return;
-            if (self.output.layout_demand.?.serial != req.serial) return;
-
-            self.output.layout_demand.?.apply() catch {
-                layout.postError(
-                    .proposed_dimension_mismatch,
-                    "the amount of proposed view dimensions needs to match the amount of views",
-                );
-            };
+            if (self.output.layout_demand) |*layout_demand| {
+                // We can't raise a protocol error when the serial is old/wrong
+                // because we do not keep track of old serials server-side.
+                // Therefore, simply ignore requests with old/wrong serials.
+                if (layout_demand.serial != req.serial) return;
+                layout_demand.apply(self) catch {
+                    layout.postError(
+                        .proposed_dimension_mismatch,
+                        "the amount of proposed view dimensions needs to match the amount of views",
+                    );
+                };
+            }
         },
     }
 }
@@ -178,7 +190,6 @@ fn handleDestroy(layout: *zriver.LayoutV1, self: *Self) void {
         self.output.root.startTransaction();
     }
 
-    if (self.namespace) |namespace| util.gpa.free(namespace);
-
+    util.gpa.free(self.namespace);
     util.gpa.destroy(node);
 }

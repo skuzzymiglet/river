@@ -18,6 +18,7 @@
 const Self = @This();
 
 const std = @import("std");
+const mem = std.mem;
 const wlr = @import("wlroots");
 const wayland = @import("wayland");
 const wl = wayland.server.wl;
@@ -48,7 +49,7 @@ fn handleServerDestroy(listener: *wl.Listener(*wl.Server), wl_server: *wl.Server
 }
 
 fn bind(client: *wl.Client, self: *Self, version: u32, id: u32) callconv(.C) void {
-    const layout_manager = zriver.LayoutManagerV1.create(client, version, id) catch {
+    const layout_manager = zriver.LayoutManagerV1.create(client, 1, id) catch {
         client.postNoMemory();
         log.crit("out of memory", .{});
         return;
@@ -67,27 +68,17 @@ fn handleRequest(layout_manager: *zriver.LayoutManagerV1, request: zriver.Layout
 
             log.debug("bind layout '{}' on output '{}'", .{ req.namespace, output.wlr_output.name });
 
-            const node = util.gpa.create(std.TailQueue(Layout).Node) catch {
+            Layout.create(
+                layout_manager.getClient(),
+                layout_manager.getVersion(),
+                req.id,
+                output,
+                mem.span(req.namespace),
+            ) catch {
                 layout_manager.getClient().postNoMemory();
                 log.crit("out of memory", .{});
                 return;
             };
-            node.data.init(req.namespace, output, layout_manager.getClient(), 1, req.id) catch {
-                layout_manager.getClient().postNoMemory();
-                log.crit("out of memory", .{});
-                util.gpa.destroy(node);
-                return;
-            };
-            output.layouts.append(node);
-
-            // If the namespace matches that of the output, set the layout as
-            // the active one of the output and arrange it.
-            if (output.layout_namespace_option.value.string) |output_namespace| {
-                if (std.mem.eql(u8, node.data.namespace.?, std.mem.span(output_namespace))) {
-                    output.pending.layout = &node.data;
-                    output.arrangeViews();
-                }
-            }
         },
     }
 }
