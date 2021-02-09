@@ -116,7 +116,7 @@ pub fn init(self: *Self, root: *Root, wlr_output: *wlr.Output) !void {
         .root = root,
         .wlr_output = wlr_output,
         .usable_box = undefined,
-        .layout_option = try self.defaultOption("layout", .{ .string = null }, &self.layout_change),
+        .layout_option = undefined,
     };
     wlr_output.data = @ptrToInt(self);
 
@@ -157,12 +157,17 @@ pub fn init(self: *Self, root: *Root, wlr_output: *wlr.Output) !void {
     const default_title = fmt.bufPrintZ(&buf, "river - {}", .{mem.spanZ(&wlr_output.name)}) catch unreachable;
     self.setTitle(default_title);
 
-    // Add some default options to this output
-    _ = try self.defaultOption("output_title", .{ .string = default_title.ptr }, &self.output_title);
-    _ = try self.defaultOption("main_amount", .{ .uint = 1 }, null);
-    _ = try self.defaultOption("main_factor", .{ .fixed = wl.Fixed.fromDouble(0.6) }, null);
-    _ = try self.defaultOption("view_padding", .{ .uint = 10 }, null);
-    _ = try self.defaultOption("outer_padding", .{ .uint = 10 }, null);
+    // Create all default output options
+    const options_manager = &root.server.options_manager;
+    self.layout_option = try Option.create(options_manager, self, "layout", .{ .string = null });
+    const title_option = try Option.create(options_manager, self, "output_title", .{ .string = default_title.ptr });
+    _ = try Option.create(options_manager, self, "main_amount", .{ .uint = 1 });
+    _ = try Option.create(options_manager, self, "main_factor", .{ .fixed = wl.Fixed.fromDouble(0.6) });
+    _ = try Option.create(options_manager, self, "view_padding", .{ .uint = 10 });
+    _ = try Option.create(options_manager, self, "outer_padding", .{ .uint = 10 });
+
+    self.layout_option.event.update.add(&self.layout_change);
+    title_option.event.update.add(&self.output_title);
 }
 
 pub fn getLayer(self: *Self, layer: zwlr.LayerShellV1.Layer) *std.TailQueue(LayerSurface) {
@@ -502,22 +507,6 @@ pub fn setTitle(self: *Self, title: [*:0]const u8) void {
     } else if (wlr.config.has_x11_backend and self.wlr_output.isX11()) {
         self.wlr_output.x11SetTitle(title);
     }
-}
-
-/// Create an option for this output, attach a listener which is called when
-/// the option changed and initialize with a default value. Returns pointer
-/// to created option. Note that the listener is not called through this
-/// function.
-fn defaultOption(
-    self: *Self,
-    key: [*:0]const u8,
-    value: Option.Value,
-    listener: ?*wl.Listener(*Option),
-) !*Option {
-    const option = try Option.create(&self.root.server.options_manager, self, key);
-    try option.set(value);
-    if (listener) |lstnr| option.update.add(lstnr);
-    return option;
 }
 
 fn handleTitleChange(listener: *wl.Listener(*Option), option: *Option) void {

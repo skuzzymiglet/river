@@ -140,11 +140,11 @@ riverctl set-option -focused-output layout tile-left
 
 # Mod+Alt+{1..9} to set main amount
 # Mod+Alt+Ctrl+{1..9} to set main factor
-for i in $(seq 1 9)
-do
-    riverctl map normal $mod+mod1         spawn riverctl set-option -focused-output main_amount "${i}"
-    riverctl map normal $mod+Control+mod1 spawn riverctl set-option -focused-output main_factor "0.${i}"
-done
+#for i in $(seq 1 9)
+#do
+#    riverctl map normal $mod+mod1         spawn riverctl set-option -focused-output main_amount "${i}"
+#    riverctl map normal $mod+Control+mod1 spawn riverctl set-option -focused-output main_factor "0.${i}"
+#done
 
 # Set app-ids of views which should float
 riverctl float-filter-add "float"
