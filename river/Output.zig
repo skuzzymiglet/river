@@ -179,7 +179,7 @@ pub fn arrangeFilter(view: *View, filter_tags: u32) bool {
 /// like a simple floating WM.
 ///
 /// If a layout has been found, the changes of view dimensions are async.
-/// Therefore all transactions on this output are blocked untilt the layout
+/// Therefore all transactions on this output are blocked until the layout
 /// demand has either finished or was aborted. Both cases will start a
 /// transaction.
 pub fn arrangeViews(self: *Self) void {
@@ -194,32 +194,31 @@ pub fn arrangeViews(self: *Self) void {
         self.layout_demand = null;
     }
 
-    if (self.layout_namespace == null) return;
-
     // If the usable area has a zero dimension, trying to arrange the layout
     // would cause an underflow and is pointless anyway.
     if (self.usable_box.width == 0 or self.usable_box.height == 0) return;
 
-    // How many views will be part of the layout?
-    var views: u32 = 0;
-    var view_it = ViewStack(View).iter(self.views.first, .forward, self.pending.tags, arrangeFilter);
-    while (view_it.next() != null) views += 1;
-    if (views == 0) return;
+    if (self.layout_namespace) |layout_namespace| {
+        // How many views will be part of the layout?
+        var views: u32 = 0;
+        var view_it = ViewStack(View).iter(self.views.first, .forward, self.pending.tags, arrangeFilter);
+        while (view_it.next() != null) views += 1;
+        if (views == 0) return;
 
-    // Try to find a fitting layout and start the layout demand process.
-    // Remember that it is async. The existence of self.layout_demand
-    // will block all transactions for this output. It gets destroyed
-    // either when it times out or when the layout client commits a layout.
-    var layout_it = self.layouts.first;
-    while (layout_it) |node| : (layout_it = node.next) {
-        if (node.data.namespace == null) continue;
-        if (std.mem.eql(u8, self.layout_namespace.?, node.data.namespace.?)) {
-            node.data.startLayoutDemand(views);
-            return;
+        // Try to find a fitting layout and start the layout demand process.
+        // Remember that it is async. The existence of self.layout_demand
+        // will block all transactions for this output. It gets destroyed
+        // either when it times out or when the layout client commits a layout.
+        var layout_it = self.layouts.first;
+        while (layout_it) |node| : (layout_it = node.next) {
+            if (mem.eql(u8, layout_namespace, node.data.namespace)) {
+                node.data.startLayoutDemand(views);
+                return;
+            }
         }
-    }
 
-    log.debug("unable to find layout for output '{}'", .{self.wlr_output.name});
+        log.debug("unable to find layout '{}' for output '{}'", .{ layout_namespace, self.wlr_output.name });
+    }
 }
 
 /// Arrange all layer surfaces of this output and adjust the usable area

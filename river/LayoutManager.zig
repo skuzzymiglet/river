@@ -18,6 +18,7 @@
 const Self = @This();
 
 const std = @import("std");
+const mem = std.mem;
 const wlr = @import("wlroots");
 const wayland = @import("wayland");
 const wl = wayland.server.wl;
@@ -48,7 +49,7 @@ fn handleServerDestroy(listener: *wl.Listener(*wl.Server), wl_server: *wl.Server
 }
 
 fn bind(client: *wl.Client, self: *Self, version: u32, id: u32) callconv(.C) void {
-    const layout_manager = zriver.LayoutManagerV1.create(client, version, id) catch {
+    const layout_manager = zriver.LayoutManagerV1.create(client, 1, id) catch {
         client.postNoMemory();
         log.crit("out of memory", .{});
         return;
@@ -65,29 +66,19 @@ fn handleRequest(layout_manager: *zriver.LayoutManagerV1, request: zriver.Layout
             const wlr_output = wlr.Output.fromWlOutput(req.output) orelse return;
             const output = @intToPtr(*Output, wlr_output.data);
 
-            log.debug("bind layout '{}' on output '{}'", .{ req.namespace, output.wlr_output.name });
+            log.debug("get layout request '{}' on output '{}'", .{ req.namespace, output.wlr_output.name });
 
-            const node = util.gpa.create(std.TailQueue(Layout).Node) catch {
+            Layout.create(
+                layout_manager.getClient(),
+                layout_manager.getVersion(),
+                req.id,
+                output,
+                mem.span(req.namespace),
+            ) catch {
                 layout_manager.getClient().postNoMemory();
                 log.crit("out of memory", .{});
                 return;
             };
-            node.data.init(req.namespace, output, layout_manager.getClient(), 1, req.id) catch {
-                layout_manager.getClient().postNoMemory();
-                log.crit("out of memory", .{});
-                util.gpa.destroy(node);
-                return;
-            };
-            output.layouts.append(node);
-
-            // If the namespace matches that of the output, it would affect the output
-            // on the next arrange. We are triggering that now because otherwise there
-            // would be, from the users point of view, an unexpected layout happening
-            // at some point.
-            if (std.mem.eql(u8, node.data.namespace.?, output.layout_namespace.?)) {
-                output.arrangeViews();
-                output.root.startTransaction();
-            }
         },
     }
 }
