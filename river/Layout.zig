@@ -120,6 +120,8 @@ pub fn startLayoutDemand(self: *Self, views: u32) void {
         self.layout.sendAdvertiseView(view.pending.tags, view.getAppId(), serial);
     }
     self.layout.sendAdvertiseDone(serial);
+
+    self.output.root.trackLayoutDemands();
 }
 
 fn handleRequest(layout: *zriver.LayoutV1, request: zriver.LayoutV1.Request, self: *Self) void {

@@ -317,11 +317,15 @@ pub fn sendToOutput(self: *Self, destination_output: *Output) void {
     self.output.sendViewTags();
     destination_output.sendViewTags();
 
-    self.surface.?.sendLeave(self.output.wlr_output);
-    self.surface.?.sendEnter(destination_output.wlr_output);
+    if (self.surface) |surface| {
+        surface.sendLeave(self.output.wlr_output);
+        surface.sendEnter(destination_output.wlr_output);
 
-    self.foreign_toplevel_handle.?.outputLeave(self.output.wlr_output);
-    self.foreign_toplevel_handle.?.outputEnter(destination_output.wlr_output);
+        // Must be present if surface is non-null indicating that the view
+        // is mapped.
+        self.foreign_toplevel_handle.?.outputLeave(self.output.wlr_output);
+        self.foreign_toplevel_handle.?.outputEnter(destination_output.wlr_output);
+    }
 
     self.output = destination_output;
 }
@@ -488,6 +492,7 @@ pub fn unmap(self: *Self) void {
     log.debug("view '{}' unmapped", .{self.getTitle()});
 
     self.destroying = true;
+    if (self.saved_buffers.items.len == 0) self.saveBuffers();
 
     if (self.opacity_timer != null) {
         self.killOpacityTimer();

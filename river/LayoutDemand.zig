@@ -78,11 +78,7 @@ fn handleTimeout(layout: *Layout) callconv(.C) c_int {
     layout.output.layout_demand.?.deinit();
     layout.output.layout_demand = null;
 
-    // Start a transaction, so things that happened while
-    // this LayoutDemand was timing out are applied correctly.
-    // Remember: An active layout demand blocks all transactions.
-    // on the affected output.
-    layout.output.root.startTransaction();
+    layout.output.root.notifyLayoutDemandDone();
 
     return 0;
 }
@@ -109,12 +105,12 @@ pub fn pushViewDimensions(self: *Self, output: *Output, x: i32, y: i32, width: u
 pub fn apply(self: *Self, layout: *Layout) !void {
     const output = layout.output;
 
-    // Whether the layout demand succeeds or fails, we need to finish the layout demand
-    // and start a transaction.
+    // Whether the layout demand succeeds or fails, we are done with it and
+    // need to clean up
     defer {
         output.layout_demand.?.deinit();
         output.layout_demand = null;
-        output.root.startTransaction();
+        output.root.notifyLayoutDemandDone();
     }
 
     // Check if amount of proposed dimensions matches amount of views to arrange

@@ -193,9 +193,9 @@ pub fn arrangeFilter(view: *View, filter_tags: u32) bool {
 /// dimensions. So without any active layouts, river will function like a simple
 /// floating WM.
 ///
-/// The changes of view dimensions are async. Therefore all transactions on this
-/// output are blocked until the layout demand has either finished or was
-/// aborted. Both cases will start a transaction.
+/// The changes of view dimensions are async. Therefore all transactions are
+/// blocked until the layout demand has either finished or was aborted. Both
+/// cases will start a transaction.
 pub fn arrangeViews(self: *Self) void {
     if (self == &self.root.noop_output) return;
 
