@@ -85,9 +85,15 @@ const Option = struct {
     value: Value = .unset,
     output: *Output = undefined,
 
-    pub fn init(self: *Option, output: *Output, comptime key: [*:0]const u8) !void {
-        self.output = output;
-        self.handle = try output.context.options_manager.?.getOptionHandle(key, output.output);
+    pub fn init(self: *Option, output: *Output, comptime key: [*:0]const u8, initial: Value) !void {
+        self.* = .{
+            .value = initial,
+            .output = output,
+            .handle = try output.context.options_manager.?.getOptionHandle(
+                key,
+                output.output,
+            ),
+        };
         self.handle.?.setListener(*Option, optionListener, self) catch |err| {
             self.handle.?.destroy();
             self.handle = null;
@@ -100,21 +106,21 @@ const Option = struct {
     }
 
     fn optionListener(handle: *zriver.OptionHandleV1, event: zriver.OptionHandleV1.Event, self: *Option) void {
-        // If this is not the initial event, the value has changed and the
-        // compositor needs to be notified.
-        if (self.value != .unset) {
-            if (self.output.top.layout) |layout| layout.parametersChanged();
-            if (self.output.right.layout) |layout| layout.parametersChanged();
-            if (self.output.bottom.layout) |layout| layout.parametersChanged();
-            if (self.output.left.layout) |layout| layout.parametersChanged();
-        }
         switch (event) {
-            .unset => {},
+            .unset => switch (self.value) {
+                .uint => handle.setUintValue(self.value.uint),
+                .double => handle.setFixedValue(wl.Fixed.fromDouble(self.value.double)),
+                else => unreachable,
+            },
             .int_value => {},
             .uint_value => |data| self.value = .{ .uint = data.value },
             .fixed_value => |data| self.value = .{ .double = data.value.toDouble() },
             .string_value => {},
         }
+        if (self.output.top.layout) |layout| layout.parametersChanged();
+        if (self.output.right.layout) |layout| layout.parametersChanged();
+        if (self.output.bottom.layout) |layout| layout.parametersChanged();
+        if (self.output.left.layout) |layout| layout.parametersChanged();
     }
 
     pub fn getValueOrElse(self: *Option, comptime T: type, comptime otherwise: T) T {
@@ -173,10 +179,10 @@ const Output = struct {
 
         self.configured = true;
 
-        self.main_amount.init(self, "main_amount") catch {};
-        self.main_factor.init(self, "main_factor") catch {};
-        self.view_padding.init(self, "view_padding") catch {};
-        self.outer_padding.init(self, "outer_padding") catch {};
+        self.main_amount.init(self, "main_amount", .{ .uint = 1 }) catch {};
+        self.main_factor.init(self, "main_factor", .{ .double = 0.6 }) catch {};
+        self.view_padding.init(self, "view_padding", .{ .uint = 10 }) catch {};
+        self.outer_padding.init(self, "outer_padding", .{ .uint = 10 }) catch {};
 
         self.top.init(self, .top) catch {};
         self.right.init(self, .right) catch {};
