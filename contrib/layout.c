@@ -47,43 +47,55 @@
 #include"river-layout-unstable-v1.h"
 #include"river-options-unstable-v1.h"
 
-struct Context
+/* A few macros to indulge the inner glibc user. */
+#define MIN(a, b) ( a < b ? a : b )
+#define MAX(a, b) ( a > b ? a : b )
+#define CLAMP(a, b, c) ( MIN(MAX(b, c), MAX(MIN(b, c), a)) )
+
+enum Option_type
 {
-	struct wl_display  *display;
-	struct wl_registry *registry;
+	UINT_OPTION,
+	DOUBLE_OPTION
+};
 
-	struct wl_list outputs;
-
-	struct zriver_layout_manager_v1 *layout_manager;
-	struct zriver_options_manager_v1 *options_manager;
-
-	bool run;
-	int ret;
+struct Option
+{
+	struct Output *output;
+	struct zriver_option_handle_v1 *handle;
+	enum Option_type type;
+	union
+	{
+		uint32_t u;
+		double   d;
+	} value;
 };
 
 struct Output
 {
 	struct wl_list link;
 
-	struct Context          *context;
 	struct wl_output        *output;
 	struct zriver_layout_v1 *layout;
 
-	struct zriver_option_handle_v1 *main_amount_option;
-	struct zriver_option_handle_v1 *main_factor_option;
-	struct zriver_option_handle_v1 *view_padding_option;
-	struct zriver_option_handle_v1 *outer_padding_option;
+	struct Option main_amount;
+	struct Option main_factor;
+	struct Option view_padding;
+	struct Option outer_padding;
 
-	uint32_t main_amount;
-	double   main_factor;
-	uint32_t view_padding;
-	uint32_t outer_padding;
+	bool configured;
 };
 
-/* A few macros to indulge the inner glibc user. */
-#define MIN(a, b) ( a < b ? a : b )
-#define MAX(a, b) ( a > b ? a : b )
-#define CLAMP(a, b, c) ( MIN(MAX(b, c), MAX(MIN(b, c), a)) )
+/* In Wayland it's a good idea to have your main data global, since you'll need
+ * it everywhere anyway.
+ */
+struct wl_display  *wl_display;
+struct wl_registry *wl_registry;
+struct wl_callback *sync_callback;
+struct zriver_layout_manager_v1 *layout_manager;
+struct zriver_options_manager_v1 *options_manager;
+struct wl_list outputs;
+bool loop = true;
+int ret = EXIT_FAILURE;
 
 static void layout_handle_layout_demand (void *data, struct zriver_layout_v1 *zriver_layout_v1,
 		uint32_t view_amount, uint32_t width, uint32_t height, uint32_t serial)
@@ -100,15 +112,15 @@ static void layout_handle_layout_demand (void *data, struct zriver_layout_v1 *zr
 	 * you have to create handlers for the advertise_view and advertise_done
 	 * events. Happy hacking!
 	 */
-	width -= 2 * output->outer_padding, height -= 2 * output->outer_padding;
-	const double main_factor = CLAMP(output->main_factor, 0.1, 0.9);
+	width -= 2 * output->outer_padding.value.u, height -= 2 * output->outer_padding.value.u;
+	const double main_factor = CLAMP(output->main_factor.value.d, 0.1, 0.9);
 	unsigned int main_size, stack_size, view_x, view_y, view_width, view_height;
-	if ( output->main_amount == 0 )
+	if ( output->main_amount.value.u == 0 )
 	{
 		main_size  = 0;
 		stack_size = width;
 	}
-	else if ( view_amount <= output->main_amount )
+	else if ( view_amount <= output->main_amount.value.u )
 	{
 		main_size  = width;
 		stack_size = 0;
@@ -120,26 +132,26 @@ static void layout_handle_layout_demand (void *data, struct zriver_layout_v1 *zr
 	}
 	for (unsigned int i = 0; i < view_amount; i++)
 	{
-		if ( i < output->main_amount ) /* main area. */
+		if ( i < output->main_amount.value.u ) /* main area. */
 		{
 			view_x      = 0;
 			view_width  = main_size;
-			view_height = height / MIN(output->main_amount, view_amount);
+			view_height = height / MIN(output->main_amount.value.u, view_amount);
 			view_y      = i * view_height;
 		}
 		else /* Stack area. */
 		{
 			view_x      = main_size;
 			view_width  = stack_size;
-			view_height = height / ( view_amount - output->main_amount);
-			view_y      = (i - output->main_amount) * view_height;
+			view_height = height / ( view_amount - output->main_amount.value.u);
+			view_y      = (i - output->main_amount.value.u) * view_height;
 		}
 
 		zriver_layout_v1_push_view_dimensions(output->layout, serial,
-				view_x + output->view_padding + output->outer_padding,
-				view_y + output->view_padding + output->outer_padding,
-				view_width - (2*output->view_padding),
-				view_height - (2*output->view_padding));
+				view_x + output->view_padding.value.u + output->outer_padding.value.u,
+				view_y + output->view_padding.value.u + output->outer_padding.value.u,
+				view_width - (2 * output->view_padding.value.u),
+				view_height - (2 * output->view_padding.value.u));
 	}
 
 	zriver_layout_v1_commit(output->layout, serial);
@@ -154,9 +166,8 @@ static void layout_handle_namespace_in_use (void *data, struct zriver_layout_v1 
 	 * affected river_layout object and recover from this mishap. Writing
 	 * such a client is left as an exercise for the reader.
 	 */
-	struct Context *context = (struct Context *)data;
 	fputs("Namespace already in use.\n", stderr);
-	context->run = false;
+	loop = false;
 }
 
 static void noop () { }
@@ -168,140 +179,141 @@ static const struct zriver_layout_v1_listener layout_listener = {
 	.advertise_done   = noop,
 };
 
-static void main_amount_handle_change (void *data, struct zriver_option_handle_v1 *handle, uint32_t value)
+static void option_handle_unset (void *data, struct zriver_option_handle_v1 *handle)
 {
-	struct Output *output = (struct Output *)data;
-	output->main_amount = value;
-
-	/* Our layout depends on this value. We need to signal the compositor
-	 * that one of the parameters we use to generate the layout has changed.
-	 * It may then decide to start a new layout demand.
+	/* The option we requested does not have a value yet. That is fine,
+	 * let's just initialize it with some (totally arbitrary) defaults.
 	 */
-	zriver_layout_v1_parameters_changed(output->layout);
+	struct Option *option = (struct Option *)data;
+	if ( option->type == UINT_OPTION )
+		zriver_option_handle_v1_set_uint_value(handle, option->value.u);
+	else if ( option->type == DOUBLE_OPTION )
+		zriver_option_handle_v1_set_fixed_value(handle,
+				wl_fixed_from_double(option->value.d));
 }
 
-static const struct zriver_option_handle_v1_listener main_amount_listener = {
-	.unset        = noop,
-	.int_value    = noop,
-	.uint_value   = main_amount_handle_change,
-	.fixed_value  = noop,
-	.string_value = noop,
-};
-
-static void main_factor_handle_change (void *data, struct zriver_option_handle_v1 *handle, wl_fixed_t value)
+static void option_handle_uint (void *data, struct zriver_option_handle_v1 *handle,
+		uint32_t value)
 {
-	struct Output *output = (struct Output *)data;
-	output->main_factor = wl_fixed_to_double(value);
-	zriver_layout_v1_parameters_changed(output->layout);
+	struct Option *option = (struct Option *)data;
+
+	/* We have received an event indicating the value of this option. But we
+	 * can only use it if it matches the type we want.
+	 */
+	if ( option->type == UINT_OPTION )
+	{
+		option->value.u = value;
+
+		/* Our layout depends on this value. We need to signal the
+		 * compositor that one of the parameters we use to generate the
+		 * layout has changed. It may then decide to start a new layout
+		 * demand process.
+		 */
+		zriver_layout_v1_parameters_changed(option->output->layout);
+	}
 }
 
-static const struct zriver_option_handle_v1_listener main_factor_listener = {
-	.unset        = noop,
-	.int_value    = noop,
-	.uint_value   = noop,
-	.fixed_value  = main_factor_handle_change,
-	.string_value = noop,
-};
-
-static void view_padding_handle_change (void *data, struct zriver_option_handle_v1 *handle, uint32_t value)
+static void option_handle_fixed (void *data, struct zriver_option_handle_v1 *handle,
+		wl_fixed_t value)
 {
-	struct Output *output = (struct Output *)data;
-	output->view_padding = value;
-	zriver_layout_v1_parameters_changed(output->layout);
+	struct Option *option = (struct Option *)data;
+
+	if ( option->type == DOUBLE_OPTION )
+	{
+		option->value.d = wl_fixed_to_double(value);
+		zriver_layout_v1_parameters_changed(option->output->layout);
+	}
 }
 
-static const struct zriver_option_handle_v1_listener view_padding_listener = {
-	.unset        = noop,
+static const struct zriver_option_handle_v1_listener option_listener = {
+	.unset        = option_handle_unset,
 	.int_value    = noop,
-	.uint_value   = view_padding_handle_change,
-	.fixed_value  = noop,
-	.string_value = noop,
-};
-
-static void outer_padding_handle_change (void *data, struct zriver_option_handle_v1 *handle, uint32_t value)
-{
-	struct Output *output = (struct Output *)data;
-	output->outer_padding = value;
-	zriver_layout_v1_parameters_changed(output->layout);
-}
-
-static const struct zriver_option_handle_v1_listener outer_padding_listener = {
-	.unset        = noop,
-	.int_value    = noop,
-	.uint_value   = outer_padding_handle_change,
-	.fixed_value  = noop,
+	.uint_value   = option_handle_uint,
+	.fixed_value  = option_handle_fixed,
 	.string_value = noop,
 };
 
 static void configure_output (struct Output *output)
 {
+	output->configured = true;
+
 	/* The namespace of the layout is how the compositor chooses what layout
 	 * to use. It can be any arbitrary string. It should describe roughly
 	 * what kind of layout your client will create, so here we use "tile".
 	 */
-	output->layout = zriver_layout_manager_v1_get_river_layout(
-			output->context->layout_manager, output->output, "tile");
+	output->layout = zriver_layout_manager_v1_get_river_layout(layout_manager,
+			output->output, "tile");
 	zriver_layout_v1_add_listener(output->layout, &layout_listener, output);
 
 	/* The amount of main views and other such values are communicated using
 	 * river-options. You can have an arbitrary amount of options which hold
-	 * arbitrary values, but here we just use the default ones. These are
-	 * automatically created by river for each output and already set, which
-	 * means we do not have to handle the cases of them having either no
-	 * type or a wrong type. However if you want to use other custom options,
-	 * you will have to do so.
+	 * arbitrary values. Here we are boring and just use the ones you'd
+	 * typically expect for typical tiled layouts.
 	 *
-	 * The added complexity and verbosity of using a separate listener for
-	 * each value is needed because of C and because of the way listeners
-	 * work in libwayland. This could be solved more nicely with other
-	 * wayland libraries and by using other languages, but here we are...
+	 * Careful: Options can have a wrong type (set by other clients) which
+	 * is a special case we have to handle.
 	 */
-	output->main_amount_option = zriver_options_manager_v1_get_option_handle(
-		output->context->options_manager, "main_amount", output->output);
-	zriver_option_handle_v1_add_listener(output->main_amount_option,
-		&main_amount_listener, output);
-	output->main_factor_option = zriver_options_manager_v1_get_option_handle(
-		output->context->options_manager, "main_factor", output->output);
-	zriver_option_handle_v1_add_listener(output->main_factor_option,
-		&main_factor_listener, output);
-	output->view_padding_option = zriver_options_manager_v1_get_option_handle(
-		output->context->options_manager, "view_padding", output->output);
-	zriver_option_handle_v1_add_listener(output->view_padding_option,
-		&view_padding_listener, output);
-	output->outer_padding_option = zriver_options_manager_v1_get_option_handle(
-		output->context->options_manager, "outer_padding", output->output);
-	zriver_option_handle_v1_add_listener(output->outer_padding_option,
-		&outer_padding_listener, output);
+	output->main_amount.handle = zriver_options_manager_v1_get_option_handle(
+		options_manager, "main_amount", output->output);
+	zriver_option_handle_v1_add_listener(output->main_amount.handle,
+		&option_listener, &output->main_amount);
+
+	output->main_factor.handle = zriver_options_manager_v1_get_option_handle(
+		options_manager, "main_factor", output->output);
+	zriver_option_handle_v1_add_listener(output->main_factor.handle,
+		&option_listener, &output->main_factor);
+
+	output->view_padding.handle = zriver_options_manager_v1_get_option_handle(
+		options_manager, "view_padding", output->output);
+	zriver_option_handle_v1_add_listener(output->view_padding.handle,
+		&option_listener, &output->view_padding);
+
+	output->outer_padding.handle = zriver_options_manager_v1_get_option_handle(
+		options_manager, "outer_padding", output->output);
+	zriver_option_handle_v1_add_listener(output->outer_padding.handle,
+		&option_listener, &output->outer_padding);
 }
 
-static bool create_output (struct Context *context, struct wl_registry *registry,
-		uint32_t name, const char *interface, uint32_t version)
+static bool create_output (struct wl_output *wl_output)
 {
 	struct Output *output = calloc(1, sizeof(struct Output));
 	if ( output == NULL )
+	{
+		fputs("Failed to allocate.\n", stderr);
 		return false;
+	}
 
-	output->output = wl_registry_bind(registry, name, &wl_output_interface, 3);
-	output->context = context;
-	output->layout = NULL;
+	output->output     = wl_output;
+	output->layout     = NULL;
+	output->configured = false;
 
-	output->main_amount_option   = NULL;
-	output->main_factor_option   = NULL;
-	output->view_padding_option  = NULL;
-	output->outer_padding_option = NULL;
+	output->main_amount.value.u = 1;
+	output->main_amount.handle  = NULL;
+	output->main_amount.type    = UINT_OPTION;
+	output->main_amount.output  = output;
 
-	output->main_amount   = 1;
-	output->main_factor   = 0.6;
-	output->view_padding  = 10;
-	output->outer_padding = 10;
+	output->main_factor.value.d = 0.6;
+	output->main_factor.handle  = NULL;
+	output->main_factor.type    = DOUBLE_OPTION;
+	output->main_factor.output  = output;
+
+	output->view_padding.handle  = NULL;
+	output->view_padding.value.u = 10;
+	output->view_padding.type    = UINT_OPTION;
+	output->view_padding.output  = output;
+
+	output->outer_padding.value.u = 10;
+	output->outer_padding.handle  = NULL;
+	output->outer_padding.type    = UINT_OPTION;
+	output->outer_padding.output  = output;
 
 	/* If we already have the river_layout_manager and the river_options_manager,
 	 * we can get a river_layout for this output.
 	 */
-	if ( context->layout_manager != NULL && context->options_manager != NULL )
+	if ( layout_manager != NULL && options_manager != NULL )
 		configure_output(output);
 
-	wl_list_insert(&context->outputs, &output->link);
+	wl_list_insert(&outputs, &output->link);
 	return true;
 }
 
@@ -309,45 +321,45 @@ static void destroy_output (struct Output *output)
 {
 	if ( output->layout != NULL )
 		zriver_layout_v1_destroy(output->layout);
-	if ( output->main_amount_option != NULL )
-		zriver_option_handle_v1_destroy(output->main_amount_option);
-	if ( output->main_factor_option != NULL )
-		zriver_option_handle_v1_destroy(output->main_factor_option);
-	if ( output->view_padding_option != NULL )
-		zriver_option_handle_v1_destroy(output->view_padding_option);
-	if ( output->outer_padding_option != NULL )
-		zriver_option_handle_v1_destroy(output->outer_padding_option);
+	if ( output->main_amount.handle != NULL )
+		zriver_option_handle_v1_destroy(output->main_amount.handle);
+	if ( output->main_factor.handle != NULL )
+		zriver_option_handle_v1_destroy(output->main_factor.handle);
+	if ( output->view_padding.handle != NULL )
+		zriver_option_handle_v1_destroy(output->view_padding.handle);
+	if ( output->outer_padding.handle != NULL )
+		zriver_option_handle_v1_destroy(output->outer_padding.handle);
 	wl_output_destroy(output->output);
 	wl_list_remove(&output->link);
 	free(output);
 }
 
-static void destroy_all_outputs (struct Context *context)
+static void destroy_all_outputs ()
 {
 	struct Output *output, *tmp;
-	wl_list_for_each_safe(output, tmp, &context->outputs, link)
+	wl_list_for_each_safe(output, tmp, &outputs, link)
 		destroy_output(output);
 }
 
 static void registry_handle_global (void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version)
 {
-	struct Context *context = (struct Context *)data;
-
 	if (! strcmp(interface, zriver_layout_manager_v1_interface.name))
-		context->layout_manager = wl_registry_bind(registry, name, &zriver_layout_manager_v1_interface, 1);
+		layout_manager = wl_registry_bind(registry, name,
+				&zriver_layout_manager_v1_interface, 1);
 	else if (! strcmp(interface, zriver_options_manager_v1_interface.name))
-		context->options_manager = wl_registry_bind(registry, name, &zriver_options_manager_v1_interface, 1);
+		options_manager = wl_registry_bind(registry, name,
+				&zriver_options_manager_v1_interface, 1);
 	else if (! strcmp(interface, wl_output_interface.name))
 	{
-		if (! create_output(context, registry, name, interface, version))
-			goto error;
+		struct wl_output *wl_output = wl_registry_bind(registry, name,
+				&wl_output_interface, version);
+		if (! create_output(wl_output))
+		{
+			loop = false;
+			ret = EXIT_FAILURE;
+		}
 	}
-
-	return;
-error:
-	context->run = false;
-	context->ret = EXIT_FAILURE;
 }
 
 static const struct wl_registry_listener registry_listener = {
@@ -355,32 +367,29 @@ static const struct wl_registry_listener registry_listener = {
 	.global_remove = noop
 };
 
-static bool init_wayland (struct Context *context)
+static void sync_handle_done (void *data, struct wl_callback *wl_callback,
+		uint32_t irrelevant)
 {
-	if ( NULL == (context->display = wl_display_connect(NULL)) )
-	{
-		fputs("Can not connect to Wayland server.\n", stderr);
-		return false;
-	}
+	wl_callback_destroy(wl_callback);
+	sync_callback = NULL;
 
-	wl_list_init(&context->outputs);
-
-	context->registry = wl_display_get_registry(context->display);
-	assert(context->registry);
-	wl_registry_add_listener(context->registry, &registry_listener, context);
-
-	wl_display_roundtrip(context->display);
-
-	if ( context->layout_manager == NULL )
+	/* When this function is called, the registry finished advertising all
+	 * available globals. Let's check if we have everything we need.
+	 */
+	if ( layout_manager == NULL )
 	{
 		fputs("Wayland compositor does not support river-layout-unstable-v1.\n", stderr);
-		return false;
+		ret = EXIT_FAILURE;
+		loop = false;
+		return;
 	}
 
-	if ( context->options_manager == NULL )
+	if ( options_manager == NULL )
 	{
 		fputs("Wayland compositor does not support river-options-unstable-v1.\n", stderr);
-		return false;
+		ret = EXIT_FAILURE;
+		loop = false;
+		return;
 	}
 
 	/* If outputs were registered before both river_layout_manager and
@@ -388,46 +397,76 @@ static bool init_wayland (struct Context *context)
 	 * nor the option handles, so we need to create those here.
 	 */
 	struct Output *output;
-	wl_list_for_each(output, &context->outputs, link)
-		if ( output->layout == NULL )
+	wl_list_for_each(output, &outputs, link)
+		if (! output->configured)
 			configure_output(output);
+}
+
+static const struct wl_callback_listener sync_callback_listener = {
+	.done = sync_handle_done,
+};
+
+static bool init_wayland (void)
+{
+	/* We query the display name here instead of letting wl_display_connect()
+	 * figure it out itself, because libwayland (for legacy reasons) falls
+	 * back to using "wayland-0" when $WAYLAND_DISPLAY is not set, which is
+	 * generally not desirable.
+	 */
+	const char *display_name = getenv("WAYLAND_DISPLAY");
+	if ( display_name == NULL )
+	{
+		fputs("WAYLAND_DISPLAY is not set.\n", stderr);
+		return false;
+	}
+
+	wl_display = wl_display_connect(display_name);
+	if ( wl_display == NULL )
+	{
+		fputs("Can not connect to Wayland server.\n", stderr);
+		return false;
+	}
+
+	wl_list_init(&outputs);
+
+	wl_registry = wl_display_get_registry(wl_display);
+	wl_registry_add_listener(wl_registry, &registry_listener, NULL);
+
+	/* The sync callback we attach here will be called when all previous
+	 * requests have been handled by the server.
+	 */
+	sync_callback = wl_display_sync(wl_display);
+	wl_callback_add_listener(sync_callback, &sync_callback_listener, NULL);
 
 	return true;
 }
 
-static void finish_wayland (struct Context *context)
+static void finish_wayland (void)
 {
-	if ( context->display == NULL )
+	if ( wl_display == NULL )
 		return;
 
-	destroy_all_outputs(context);
+	destroy_all_outputs();
 
-	if ( context->layout_manager != NULL )
-		zriver_layout_manager_v1_destroy(context->layout_manager);
-	if ( context->options_manager != NULL )
-		zriver_options_manager_v1_destroy(context->options_manager);
+	if ( sync_callback != NULL )
+		wl_callback_destroy(sync_callback);
+	if ( layout_manager != NULL )
+		zriver_layout_manager_v1_destroy(layout_manager);
+	if ( options_manager != NULL )
+		zriver_options_manager_v1_destroy(options_manager);
 
-	wl_registry_destroy(context->registry);
-	wl_display_disconnect(context->display);
-}
-
-static void run (struct Context *context)
-{
-	context->ret = EXIT_SUCCESS;
-	while ( context->run && wl_display_dispatch(context->display) != -1 );
-	fputs("Connection lost.\n", stderr);
+	wl_registry_destroy(wl_registry);
+	wl_display_disconnect(wl_display);
 }
 
 int main (int argc, char *argv[])
 {
-	struct Context context = { 0 };
-	context.ret = EXIT_FAILURE;
-	context.run = true;
-
-	if (init_wayland(&context))
-		run(&context);
-
-	finish_wayland(&context);
-	return context.ret;
+	if (init_wayland())
+	{
+		ret = EXIT_SUCCESS;
+		while ( loop && wl_display_dispatch(wl_display) != -1 );
+	}
+	finish_wayland();
+	return ret;
 }
 
