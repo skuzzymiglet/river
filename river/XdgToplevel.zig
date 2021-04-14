@@ -300,14 +300,16 @@ fn handleRequestMove(
 ) void {
     const self = @fieldParentPtr(Self, "request_move", listener);
     const seat = @intToPtr(*Seat, event.seat.seat.data);
-    if (self.view.pending.float) seat.cursor.enterMode(.move, self.view);
+    if (self.view.pending.float or self.view.output.current.layout == null)
+        seat.cursor.enterMode(.move, self.view);
 }
 
 /// Called when the client asks to be resized via the cursor.
 fn handleRequestResize(listener: *wl.Listener(*wlr.XdgToplevel.event.Resize), event: *wlr.XdgToplevel.event.Resize) void {
     const self = @fieldParentPtr(Self, "request_resize", listener);
     const seat = @intToPtr(*Seat, event.seat.seat.data);
-    if (self.view.pending.float) seat.cursor.enterMode(.resize, self.view);
+    if (self.view.pending.float or self.view.output.current.layout == null)
+        seat.cursor.enterMode(.resize, self.view);
 }
 
 /// Called when the client sets / updates its title
