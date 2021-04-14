@@ -22,7 +22,7 @@ const mem = std.mem;
 const wlr = @import("wlroots");
 const wayland = @import("wayland");
 const wl = wayland.server.wl;
-const zriver = wayland.server.zriver;
+const river = wayland.server.river;
 
 const util = @import("util.zig");
 
@@ -35,12 +35,12 @@ const LayoutDemand = @import("LayoutDemand.zig");
 
 const log = std.log.scoped(.layout);
 
-layout: *zriver.LayoutV1,
+layout: *river.LayoutV1,
 namespace: []const u8,
 output: *Output,
 
 pub fn create(client: *wl.Client, version: u32, id: u32, output: *Output, namespace: []const u8) !void {
-    const layout = try zriver.LayoutV1.create(client, version, id);
+    const layout = try river.LayoutV1.create(client, version, id);
 
     if (namespaceInUse(namespace, output, client)) {
         layout.sendNamespaceInUse();
@@ -93,7 +93,7 @@ fn namespaceInUse(namespace: []const u8, output: *Output, client: *wl.Client) bo
 
 /// This exists to handle layouts that have been rendered inert (due to the
 /// namespace already being in use) until the client destroys them.
-fn handleRequestInert(layout: *zriver.LayoutV1, request: zriver.LayoutV1.Request, _: ?*c_void) void {
+fn handleRequestInert(layout: *river.LayoutV1, request: river.LayoutV1.Request, _: ?*c_void) void {
     if (request == .destroy) layout.destroy();
 }
 
@@ -130,7 +130,7 @@ pub fn startLayoutDemand(self: *Self, views: u32) void {
     self.output.root.trackLayoutDemands();
 }
 
-fn handleRequest(layout: *zriver.LayoutV1, request: zriver.LayoutV1.Request, self: *Self) void {
+fn handleRequest(layout: *river.LayoutV1, request: river.LayoutV1.Request, self: *Self) void {
     switch (request) {
         .destroy => layout.destroy(),
 
@@ -179,7 +179,7 @@ fn handleRequest(layout: *zriver.LayoutV1, request: zriver.LayoutV1.Request, sel
     }
 }
 
-fn handleDestroy(layout: *zriver.LayoutV1, self: *Self) void {
+fn handleDestroy(layout: *river.LayoutV1, self: *Self) void {
     log.debug(
         "destroying layout '{}' on output '{}'",
         .{ self.namespace, self.output.wlr_output.name },

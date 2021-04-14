@@ -25,14 +25,14 @@
  *    extension and link against them. This is achieved with the following
  *    commands (You may want to setup a build system).
  *
- *        wayland-scanner private-code < river-layout-unstable-v1.xml > river-layout-unstable-v1.c
- *        wayland-scanner client-header < river-layout-unstable-v1.xml > river-layout-unstable-v1.h
+ *        wayland-scanner private-code < river-layout-staging-v1.xml > river-layout-staging-v1.c
+ *        wayland-scanner client-header < river-layout-staging-v1.xml > river-layout-staging-v1.h
  *        wayland-scanner private-code < river-options-unstable-v1.xml > river-options-unstable-v1.c
  *        wayland-scanner client-header < river-options-unstable-v1.xml > river-options-unstable-v1.h
  *        gcc -Wall -Wextra -Wpedantic -Wno-unused-parameter -c -o layout.o layout.c
- *        gcc -Wall -Wextra -Wpedantic -Wno-unused-parameter -c -o river-layout-unstable-v1.o river-layout-unstable-v1.c
+ *        gcc -Wall -Wextra -Wpedantic -Wno-unused-parameter -c -o river-layout-staging-v1.o river-layout-staging-v1.c
  *        gcc -Wall -Wextra -Wpedantic -Wno-unused-parameter -c -o river-options-unstable-v1.o river-options-unstable-v1.c
- *        gcc -o layout layout.o river-layout-unstable-v1.o river-options-unstable-v1.o -lwayland-client
+ *        gcc -o layout layout.o river-layout-staging-v1.o river-options-unstable-v1.o -lwayland-client
  */
 
 #include<assert.h>
@@ -75,7 +75,7 @@ struct Output
 	struct wl_list link;
 
 	struct wl_output        *output;
-	struct zriver_layout_v1 *layout;
+	struct river_layout_v1 *layout;
 
 	struct Option main_amount;
 	struct Option main_factor;
@@ -91,13 +91,13 @@ struct Output
 struct wl_display  *wl_display;
 struct wl_registry *wl_registry;
 struct wl_callback *sync_callback;
-struct zriver_layout_manager_v1 *layout_manager;
+struct river_layout_manager_v1 *layout_manager;
 struct zriver_options_manager_v1 *options_manager;
 struct wl_list outputs;
 bool loop = true;
 int ret = EXIT_FAILURE;
 
-static void layout_handle_layout_demand (void *data, struct zriver_layout_v1 *zriver_layout_v1,
+static void layout_handle_layout_demand (void *data, struct river_layout_v1 *river_layout_v1,
 		uint32_t view_amount, uint32_t width, uint32_t height, uint32_t tags, uint32_t serial)
 {
 	struct Output *output = (struct Output *)data;
@@ -147,17 +147,17 @@ static void layout_handle_layout_demand (void *data, struct zriver_layout_v1 *zr
 			view_y      = (i - output->main_amount.value.u) * view_height;
 		}
 
-		zriver_layout_v1_push_view_dimensions(output->layout, serial,
+		river_layout_v1_push_view_dimensions(output->layout, serial,
 				view_x + output->view_padding.value.u + output->outer_padding.value.u,
 				view_y + output->view_padding.value.u + output->outer_padding.value.u,
 				view_width - (2 * output->view_padding.value.u),
 				view_height - (2 * output->view_padding.value.u));
 	}
 
-	zriver_layout_v1_commit(output->layout, serial);
+	river_layout_v1_commit(output->layout, serial);
 }
 
-static void layout_handle_namespace_in_use (void *data, struct zriver_layout_v1 *zriver_layout_v1)
+static void layout_handle_namespace_in_use (void *data, struct river_layout_v1 *river_layout_v1)
 {
 	/* Oh no, the namespace we choose is already used by another client!
 	 * All we can do now is destroy the river_layout object. Because we are
@@ -172,7 +172,7 @@ static void layout_handle_namespace_in_use (void *data, struct zriver_layout_v1 
 
 static void noop () { }
 
-static const struct zriver_layout_v1_listener layout_listener = {
+static const struct river_layout_v1_listener layout_listener = {
 	.namespace_in_use = layout_handle_namespace_in_use,
 	.layout_demand    = layout_handle_layout_demand,
 	.advertise_view   = noop,
@@ -209,7 +209,7 @@ static void option_handle_uint (void *data, struct zriver_option_handle_v1 *hand
 		 * layout has changed. It may then decide to start a new layout
 		 * demand process.
 		 */
-		zriver_layout_v1_parameters_changed(option->output->layout);
+		river_layout_v1_parameters_changed(option->output->layout);
 	}
 }
 
@@ -221,7 +221,7 @@ static void option_handle_fixed (void *data, struct zriver_option_handle_v1 *han
 	if ( option->type == DOUBLE_OPTION )
 	{
 		option->value.d = wl_fixed_to_double(value);
-		zriver_layout_v1_parameters_changed(option->output->layout);
+		river_layout_v1_parameters_changed(option->output->layout);
 	}
 }
 
@@ -241,9 +241,9 @@ static void configure_output (struct Output *output)
 	 * to use. It can be any arbitrary string. It should describe roughly
 	 * what kind of layout your client will create, so here we use "tile".
 	 */
-	output->layout = zriver_layout_manager_v1_get_river_layout(layout_manager,
+	output->layout = river_layout_manager_v1_get_river_layout(layout_manager,
 			output->output, "tile");
-	zriver_layout_v1_add_listener(output->layout, &layout_listener, output);
+	river_layout_v1_add_listener(output->layout, &layout_listener, output);
 
 	/* The amount of main views and other such values are communicated using
 	 * river-options. You can have an arbitrary amount of options which hold
@@ -320,7 +320,7 @@ static bool create_output (struct wl_output *wl_output)
 static void destroy_output (struct Output *output)
 {
 	if ( output->layout != NULL )
-		zriver_layout_v1_destroy(output->layout);
+		river_layout_v1_destroy(output->layout);
 	if ( output->main_amount.handle != NULL )
 		zriver_option_handle_v1_destroy(output->main_amount.handle);
 	if ( output->main_factor.handle != NULL )
@@ -344,9 +344,9 @@ static void destroy_all_outputs ()
 static void registry_handle_global (void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version)
 {
-	if (! strcmp(interface, zriver_layout_manager_v1_interface.name))
+	if (! strcmp(interface, river_layout_manager_v1_interface.name))
 		layout_manager = wl_registry_bind(registry, name,
-				&zriver_layout_manager_v1_interface, 1);
+				&river_layout_manager_v1_interface, 1);
 	else if (! strcmp(interface, zriver_options_manager_v1_interface.name))
 		options_manager = wl_registry_bind(registry, name,
 				&zriver_options_manager_v1_interface, 1);
@@ -451,7 +451,7 @@ static void finish_wayland (void)
 	if ( sync_callback != NULL )
 		wl_callback_destroy(sync_callback);
 	if ( layout_manager != NULL )
-		zriver_layout_manager_v1_destroy(layout_manager);
+		river_layout_manager_v1_destroy(layout_manager);
 	if ( options_manager != NULL )
 		zriver_options_manager_v1_destroy(options_manager);
 

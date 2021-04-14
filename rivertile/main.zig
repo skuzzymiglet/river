@@ -43,12 +43,13 @@ const std = @import("std");
 const wayland = @import("wayland");
 const wl = wayland.client.wl;
 const zriver = wayland.client.zriver;
+const river = wayland.client.river;
 
 const gpa = std.heap.c_allocator;
 
 const Context = struct {
     running: bool = true,
-    layout_manager: ?*zriver.LayoutManagerV1 = null,
+    layout_manager: ?*river.LayoutManagerV1 = null,
     options_manager: ?*zriver.OptionsManagerV1 = null,
     outputs: std.TailQueue(Output) = .{},
 
@@ -193,7 +194,7 @@ const Output = struct {
 
 const Layout = struct {
     output: *Output,
-    layout: ?*zriver.LayoutV1,
+    layout: ?*river.LayoutV1,
     orientation: Orientation,
 
     const Orientation = enum {
@@ -233,7 +234,7 @@ const Layout = struct {
         }
     }
 
-    fn layoutListener(layout: *zriver.LayoutV1, event: zriver.LayoutV1.Event, self: *Layout) void {
+    fn layoutListener(layout: *river.LayoutV1, event: river.LayoutV1.Event, self: *Layout) void {
         switch (event) {
             .namespace_in_use => {
                 std.debug.warn("{}: Namespace already in use.\n", .{self.getNamespace()});
@@ -389,8 +390,8 @@ pub fn main() !void {
 fn registryListener(registry: *wl.Registry, event: wl.Registry.Event, context: *Context) void {
     switch (event) {
         .global => |global| {
-            if (std.cstr.cmp(global.interface, zriver.LayoutManagerV1.getInterface().name) == 0) {
-                context.layout_manager = registry.bind(global.name, zriver.LayoutManagerV1, 1) catch return;
+            if (std.cstr.cmp(global.interface, river.LayoutManagerV1.getInterface().name) == 0) {
+                context.layout_manager = registry.bind(global.name, river.LayoutManagerV1, 1) catch return;
             } else if (std.cstr.cmp(global.interface, zriver.OptionsManagerV1.getInterface().name) == 0) {
                 context.options_manager = registry.bind(global.name, zriver.OptionsManagerV1, 1) catch return;
             } else if (std.cstr.cmp(global.interface, wl.Output.getInterface().name) == 0) {
