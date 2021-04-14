@@ -98,7 +98,7 @@ bool loop = true;
 int ret = EXIT_FAILURE;
 
 static void layout_handle_layout_demand (void *data, struct zriver_layout_v1 *zriver_layout_v1,
-		uint32_t view_amount, uint32_t width, uint32_t height, uint32_t serial)
+		uint32_t view_amount, uint32_t width, uint32_t height, uint32_t tags, uint32_t serial)
 {
 	struct Output *output = (struct Output *)data;
 

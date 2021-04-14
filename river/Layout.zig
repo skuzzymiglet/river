@@ -112,7 +112,13 @@ pub fn startLayoutDemand(self: *Self, views: u32) void {
     const serial = self.output.layout_demand.?.serial;
 
     // Then we let the client know that we require a layout
-    self.layout.sendLayoutDemand(views, self.output.usable_box.width, self.output.usable_box.height, serial);
+    self.layout.sendLayoutDemand(
+        views,
+        self.output.usable_box.width,
+        self.output.usable_box.height,
+        self.output.pending.tags,
+        serial,
+    );
 
     // And finally we advertise all visible views
     var it = ViewStack(View).iter(self.output.views.first, .forward, self.output.pending.tags, Output.arrangeFilter);
