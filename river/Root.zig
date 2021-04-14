@@ -365,11 +365,6 @@ fn commitTransaction(self: *Self) void {
     // Iterate over all views of all outputs
     var output_it = self.outputs.first;
     while (output_it) |output_node| : (output_it = output_node.next) {
-        // If a layout demand is currently in progress for this output,
-        // skip transaction on this output to avoid imperfect frames.
-        // We take Waylands motto, "every frame is perfect", seriously.
-        // TODO this somehow crashes river when a view is closed
-        // if (output_node.data.layout_demand != null) continue;
         const output = &output_node.data;
 
         // Apply pending state of the output
