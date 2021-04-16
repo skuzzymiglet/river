@@ -117,6 +117,12 @@ saved_buffers: std.ArrayList(SavedBuffer),
 /// view returns to floating mode.
 float_box: Box = undefined,
 
+/// While a view is in fullscreen, it is still arranged if a layout is active but
+/// the resulting dimensions are stored here instead of being applied to the view's
+/// state. This allows us to avoid an arrange when the view returns from fullscreen
+/// and for more intuitive behavior if there is no active layout for the output.
+post_fullscreen_box: Box = undefined,
+
 /// The current opacity of this view
 opacity: f32,
 
@@ -194,19 +200,19 @@ pub fn applyPending(self: *Self) void {
     if (self.current.float != self.pending.float)
         arrange_output = true;
 
-    // If switching from float to something else save the dimensions
-    if ((self.current.float and !self.pending.float) or
-        (self.current.float and !self.current.fullscreen and self.pending.fullscreen))
+    // If switching from float to non-float, save the dimensions
+    if (self.current.float and !self.pending.float)
         self.float_box = self.current.box;
 
-    // If switching from something else to float restore the dimensions
-    if ((!self.current.float and self.pending.float) or
-        (self.current.fullscreen and !self.pending.fullscreen and self.pending.float))
+    // If switching from non-float to float, apply the saved float dimensions
+    if (!self.current.float and self.pending.float)
         self.pending.box = self.float_box;
 
     // If switching to fullscreen set the dimensions to the full area of the output
     // and turn the view fully opaque
     if (!self.current.fullscreen and self.pending.fullscreen) {
+        self.post_fullscreen_box = self.current.box;
+
         self.pending.target_opacity = 1.0;
         const layout_box = self.output.root.output_layout.getBox(self.output.wlr_output).?;
         self.pending.box = .{
@@ -218,10 +224,7 @@ pub fn applyPending(self: *Self) void {
     }
 
     if (self.current.fullscreen and !self.pending.fullscreen) {
-        // If switching from fullscreen to layout, arrange the output to get
-        // assigned the proper size.
-        if (!self.pending.float)
-            arrange_output = true;
+        self.pending.box = self.post_fullscreen_box;
 
         // Restore configured opacity
         self.pending.target_opacity = if (self.pending.focus > 0)

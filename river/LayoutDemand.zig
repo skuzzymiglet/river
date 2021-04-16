@@ -126,7 +126,11 @@ pub fn apply(self: *Self, layout: *Layout) !void {
     var it = ViewStack(View).iter(output.views.first, .forward, output.pending.tags, Output.arrangeFilter);
     var i: u32 = 0;
     while (it.next()) |view| : (i += 1) {
-        view.pending.box = self.view_boxen[i];
+        if (view.pending.fullscreen) {
+            view.post_fullscreen_box = self.view_boxen[i];
+        } else {
+            view.pending.box = self.view_boxen[i];
+        }
         view.applyConstraints();
     }
     std.debug.assert(i == self.view_boxen.len);
