@@ -137,7 +137,7 @@
         Every view part of the layout demand is advertised exactly once,
         in the order of the view list.
       </description>
-      <arg name="tags" type="uint" summary="active tags of the view, 32bit bitfield"/>
+      <arg name="tags" type="uint" summary="tags of the view, 32-bit bitfield"/>
       <arg name="app_id" type="string" summary="view app-id" allow-null="true"/>
       <arg name="serial" type="uint" summary="serial of the layout demand"/>
     </event>
