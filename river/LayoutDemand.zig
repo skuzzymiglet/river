@@ -36,35 +36,32 @@ const log = std.log.scoped(.layout);
 
 const Error = error{ViewDimensionMismatch};
 
-/// Arbitrary timeout
-const timeout = 1000;
+const timeout_ms = 1000;
 
 serial: u32,
 /// Number of views for which dimensions have not been pushed.
 /// This will go negative if the client pushes too many dimensions.
 views: i32,
-/// Timeout timer
-timer: *wl.EventSource,
 /// Proposed view dimensions
 view_boxen: []Box,
+timeout_timer: *wl.EventSource,
 
 pub fn init(layout: *Layout, views: u32) !Self {
-    // Attach a timout timer
     const event_loop = layout.output.root.server.wl_server.getEventLoop();
-    const timer = try event_loop.addTimer(*Layout, handleTimeout, layout);
-    errdefer timer.remove();
-    try timer.timerUpdate(timeout);
+    const timeout_timer = try event_loop.addTimer(*Layout, handleTimeout, layout);
+    errdefer timeout_timer.remove();
+    try timeout_timer.timerUpdate(timeout_ms);
 
     return Self{
         .serial = layout.output.root.server.wl_server.nextSerial(),
         .views = @intCast(i32, views),
-        .timer = timer,
         .view_boxen = try util.gpa.alloc(Box, views),
+        .timeout_timer = timeout_timer,
     };
 }
 
 pub fn deinit(self: *const Self) void {
-    self.timer.remove();
+    self.timeout_timer.remove();
     util.gpa.free(self.view_boxen);
 }
 
