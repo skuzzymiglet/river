@@ -11,17 +11,19 @@ rivertile - Tiled layout generator for river
 # DESCRIPTION
 
 *rivertile* is a layout client for river. It provides a simple tiled layout
-split main/secondary stacks. The exact behavior may be configured using
-the options described below which may be set using *riverctl*(1) or another
-river-options wayland client.
+split main/secondary stacks.
 
 # OPTIONS
+
+These options may be set using *riverctl*(1) or another river-options
+wayland client. *rivertile* declares these options on startup, so setting
+these options before starting rivertile requires them to be declared manually.
 
 *main_location* (string, default "top")
 	The location of the main area. Vaild locations are "top", "bottom",
 	"left", and "right".
 
-*main_amount* (uint, default 1)
+*main_count* (uint, default 1)
 	The number of main views.
 
 *main_factor* (fixed, default 0.6)

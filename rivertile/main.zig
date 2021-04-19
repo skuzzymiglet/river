@@ -52,7 +52,7 @@ const Location = enum {
 };
 
 const default_main_location: Location = .left;
-const default_main_amount = 1;
+const default_main_count = 1;
 const default_main_factor = 0.6;
 const default_view_padding = 6;
 const default_outer_padding = 6;
@@ -135,7 +135,7 @@ const Output = struct {
     name: u32,
 
     main_location: Option("main_location", Location, default_main_location) = undefined,
-    main_amount: Option("main_amount", u32, default_main_amount) = undefined,
+    main_count: Option("main_count", u32, default_main_count) = undefined,
     main_factor: Option("main_factor", f64, default_main_factor) = undefined,
     view_padding: Option("view_padding", u32, default_view_padding) = undefined,
     outer_padding: Option("outer_padding", u32, default_outer_padding) = undefined,
@@ -151,8 +151,8 @@ const Output = struct {
         assert(context.initialized);
         try output.main_location.init(context, output);
         errdefer output.main_location.deinit();
-        try output.main_amount.init(context, output);
-        errdefer output.main_amount.deinit();
+        try output.main_count.init(context, output);
+        errdefer output.main_count.deinit();
         try output.main_factor.init(context, output);
         errdefer output.main_factor.deinit();
         try output.view_padding.init(context, output);
@@ -167,7 +167,7 @@ const Output = struct {
     fn deinit(output: *Output) void {
         output.wl_output.release();
 
-        output.main_amount.deinit();
+        output.main_count.deinit();
         output.main_factor.deinit();
         output.view_padding.deinit();
         output.outer_padding.deinit();
@@ -180,8 +180,8 @@ const Output = struct {
             .namespace_in_use => fatal("namespace 'rivertile' already in use.", .{}),
 
             .layout_demand => |ev| {
-                const secondary_count = if (ev.view_amount > output.main_amount.value)
-                    ev.view_amount - output.main_amount.value
+                const secondary_count = if (ev.view_count > output.main_count.value)
+                    ev.view_count - output.main_count.value
                 else
                     0;
 
@@ -204,18 +204,18 @@ const Output = struct {
                 var secondary_height: u32 = undefined;
                 var secondary_height_rem: u32 = undefined;
 
-                if (output.main_amount.value > 0 and secondary_count > 0) {
+                if (output.main_count.value > 0 and secondary_count > 0) {
                     main_width = @floatToInt(u32, output.main_factor.value * @intToFloat(f64, usable_width));
-                    main_height = usable_height / output.main_amount.value;
-                    main_height_rem = usable_height % output.main_amount.value;
+                    main_height = usable_height / output.main_count.value;
+                    main_height_rem = usable_height % output.main_count.value;
 
                     secondary_width = usable_width - main_width;
                     secondary_height = usable_height / secondary_count;
                     secondary_height_rem = usable_height % secondary_count;
-                } else if (output.main_amount.value > 0) {
+                } else if (output.main_count.value > 0) {
                     main_width = usable_width;
-                    main_height = usable_height / output.main_amount.value;
-                    main_height_rem = usable_height % output.main_amount.value;
+                    main_height = usable_height / output.main_count.value;
+                    main_height_rem = usable_height % output.main_count.value;
                 } else if (secondary_width > 0) {
                     main_width = 0;
                     secondary_width = usable_width;
@@ -224,23 +224,23 @@ const Output = struct {
                 }
 
                 var i: u32 = 0;
-                while (i < ev.view_amount) : (i += 1) {
+                while (i < ev.view_count) : (i += 1) {
                     var x: i32 = undefined;
                     var y: i32 = undefined;
                     var width: u32 = undefined;
                     var height: u32 = undefined;
 
-                    if (i < output.main_amount.value) {
+                    if (i < output.main_count.value) {
                         x = 0;
                         y = @intCast(i32, (i * main_height) + if (i > 0) main_height_rem else 0);
                         width = main_width;
                         height = main_height + if (i == 0) main_height_rem else 0;
                     } else {
                         x = @intCast(i32, main_width);
-                        y = @intCast(i32, (i - output.main_amount.value) * secondary_height +
-                            if (i > output.main_amount.value) secondary_height_rem else 0);
+                        y = @intCast(i32, (i - output.main_count.value) * secondary_height +
+                            if (i > output.main_count.value) secondary_height_rem else 0);
                         width = secondary_width;
-                        height = secondary_height + if (i == output.main_amount.value) secondary_height_rem else 0;
+                        height = secondary_height + if (i == output.main_count.value) secondary_height_rem else 0;
                     }
 
                     x += @intCast(i32, output.view_padding.value);
@@ -311,7 +311,7 @@ pub fn main() !void {
 
     // TODO: should be @tagName(default_main_location), https://github.com/ziglang/zig/issues/3779
     context.options_manager.?.declareStringOption("main_location", "left");
-    context.options_manager.?.declareUintOption("main_amount", default_main_amount);
+    context.options_manager.?.declareUintOption("main_count", default_main_count);
     context.options_manager.?.declareFixedOption("main_factor", wl.Fixed.fromDouble(default_main_factor));
     context.options_manager.?.declareUintOption("view_padding", default_view_padding);
     context.options_manager.?.declareUintOption("outer_padding", default_outer_padding);

@@ -167,13 +167,7 @@ fn handleRequest(layout: *river.LayoutV1, request: river.LayoutV1.Request, self:
                 // We can't raise a protocol error when the serial is old/wrong
                 // because we do not keep track of old serials server-side.
                 // Therefore, simply ignore requests with old/wrong serials.
-                if (layout_demand.serial != req.serial) return;
-                layout_demand.apply(self) catch {
-                    layout.postError(
-                        .proposed_dimension_mismatch,
-                        "the amount of proposed view dimensions needs to match the amount of views",
-                    );
-                };
+                if (layout_demand.serial == req.serial) layout_demand.apply(self);
             }
         },
     }

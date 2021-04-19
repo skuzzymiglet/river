@@ -99,7 +99,7 @@ pub fn pushViewDimensions(self: *Self, output: *Output, x: i32, y: i32, width: u
 }
 
 /// Apply the proposed layout to the output
-pub fn apply(self: *Self, layout: *Layout) !void {
+pub fn apply(self: *Self, layout: *Layout) void {
     const output = layout.output;
 
     // Whether the layout demand succeeds or fails, we are done with it and
@@ -110,13 +110,17 @@ pub fn apply(self: *Self, layout: *Layout) !void {
         output.root.notifyLayoutDemandDone();
     }
 
-    // Check if amount of proposed dimensions matches amount of views to arrange
+    // Check that the number of proposed dimensions is correct.
     if (self.views != 0) {
         log.err(
-            "proposed view dimension count ({}) does not match view count ({}), aborting layout demand",
+            "proposed dimension count ({}) does not match view count ({}), aborting layout demand",
             .{ -self.views + @intCast(i32, self.view_boxen.len), self.view_boxen.len },
         );
-        return Error.ViewDimensionMismatch;
+        layout.layout.postError(
+            .count_mismatch,
+            "number of proposed view dimensions must match number of views",
+        );
+        return;
     }
 
     // Apply proposed layout to views

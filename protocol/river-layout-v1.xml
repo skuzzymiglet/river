@@ -81,8 +81,8 @@
     </description>
 
     <enum name="error">
-      <entry name="proposed_dimension_mismatch" value="0" summary="amount of
-        proposed dimensions does not match amount of views in layout"/>
+      <entry name="count_mismatch" value="0" summary="number of
+        proposed dimensions does not match number of views in layout"/>
       <entry name="already_committed" value="1" summary="the layout demand with
         the provided serial was already committed"/>
     </enum>
@@ -121,7 +121,7 @@
         before the client has finished responding to an old demand, the client
         may abort work on the old demand as any further work would be wasted.
       </description>
-      <arg name="view_amount" type="uint" summary="number of views in the layout"/>
+      <arg name="view_count" type="uint" summary="number of views in the layout"/>
       <arg name="usable_width" type="uint" summary="width of the usable area"/>
       <arg name="usable_height" type="uint" summary="height of the usable area"/>
       <arg name="tags" type="uint" summary="tags of the output, 32-bit bitfield"/>
