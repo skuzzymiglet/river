@@ -25,14 +25,14 @@
  *    extension and link against them. This is achieved with the following
  *    commands (You may want to setup a build system).
  *
- *        wayland-scanner private-code < river-layout-staging-v1.xml > river-layout-staging-v1.c
- *        wayland-scanner client-header < river-layout-staging-v1.xml > river-layout-staging-v1.h
+ *        wayland-scanner private-code < river-layout-v1.xml > river-layout-v1.c
+ *        wayland-scanner client-header < river-layout-v1.xml > river-layout-v1.h
  *        wayland-scanner private-code < river-options-unstable-v1.xml > river-options-unstable-v1.c
  *        wayland-scanner client-header < river-options-unstable-v1.xml > river-options-unstable-v1.h
  *        gcc -Wall -Wextra -Wpedantic -Wno-unused-parameter -c -o layout.o layout.c
- *        gcc -Wall -Wextra -Wpedantic -Wno-unused-parameter -c -o river-layout-staging-v1.o river-layout-staging-v1.c
+ *        gcc -Wall -Wextra -Wpedantic -Wno-unused-parameter -c -o river-layout-v1.o river-layout-v1.c
  *        gcc -Wall -Wextra -Wpedantic -Wno-unused-parameter -c -o river-options-unstable-v1.o river-options-unstable-v1.c
- *        gcc -o layout layout.o river-layout-staging-v1.o river-options-unstable-v1.o -lwayland-client
+ *        gcc -o layout layout.o river-layout-v1.o river-options-unstable-v1.o -lwayland-client
  */
 
 #include<assert.h>
@@ -469,4 +469,3 @@ int main (int argc, char *argv[])
 	finish_wayland();
 	return ret;
 }
-

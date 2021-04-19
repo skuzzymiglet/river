@@ -61,7 +61,7 @@ fn handleRequest(layout_manager: *river.LayoutManagerV1, request: river.LayoutMa
     switch (request) {
         .destroy => layout_manager.destroy(),
 
-        .get_river_layout => |req| {
+        .get_layout => |req| {
             // Ignore if the output is inert
             const wlr_output = wlr.Output.fromWlOutput(req.output) orelse return;
             const output = @intToPtr(*Output, wlr_output.data);

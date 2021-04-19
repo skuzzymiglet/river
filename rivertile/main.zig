@@ -160,7 +160,7 @@ const Output = struct {
         try output.outer_padding.init(context, output);
         errdefer output.outer_padding.deinit();
 
-        output.layout = try context.layout_manager.?.getRiverLayout(output.wl_output, "rivertile");
+        output.layout = try context.layout_manager.?.getLayout(output.wl_output, "rivertile");
         output.layout.setListener(*Output, layoutListener, output) catch unreachable;
     }
 
